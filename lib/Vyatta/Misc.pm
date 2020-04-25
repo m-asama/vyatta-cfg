@@ -40,7 +40,7 @@ use Vyatta::Config;
 use Vyatta::Interface;
 use NetAddr::IP;
 use Socket;
-use Socket6;
+#use Socket6;
 
 #
 # returns a hash of ipaddrs => interface

@@ -1,0 +1,16 @@
+[Unit]
+Description=VyOS Router
+After=systemd-journald-dev-log.socket network.target time-sync.target local-fs.target frr.service
+
+[Service]
+Type=simple
+Restart=no
+TimeoutSec=20min
+KillMode=process
+RemainAfterExit=yes
+ExecStart=/etc/init.d/vyatta-router start
+ExecStop=/etc/init.d/vyatta-router stop
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target

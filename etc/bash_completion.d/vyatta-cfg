@@ -22,6 +22,11 @@
 # 
 # **** End License ****
 
+groups | grep vyattacfg > /dev/null
+if [ $? -ne 0 ]; then
+  return 0
+fi
+
 # Turn on history logging
 export HISTCONTROL=
 export HISTFILESIZE=10000
@@ -129,7 +134,8 @@ vyatta_run_complete ()
   COMP_WORDS=( "${COMP_WORDS[@]:1}" )
   (( COMP_CWORD -= 1 ))
   if [[ ${COMP_WORDS[0]} =~ "/" ]]; then
-    _filedir_xspec
+#    _filedir_xspec
+    true # XXX:
   else
     shopt -s extglob nullglob
     _vyatta_op_expand "$@"
@@ -1076,7 +1082,8 @@ vyatta_config_default_complete ()
   else
     # after the first word => cannot be vyatta command so use original default
     compopt -o filenames
-    _filedir_xspec
+#    _filedir_xspec
+    true # XXX:
   fi
 }
 

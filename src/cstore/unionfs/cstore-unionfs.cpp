@@ -25,6 +25,10 @@
 #include <fcntl.h>
 #include <sys/mount.h>
 #include <wait.h>
+#include <dirent.h>
+
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include <cli_cstore.h>
 #include <cstore/unionfs/cstore-unionfs.hpp>
@@ -163,6 +167,42 @@ _unescape_path_name(const string& path)
   return npath;
 }
 
+vector<int> getActiveCommits()
+{
+  string process_name = "vbash";
+  vector<int> pids;
+
+  DIR *dp = opendir("/proc");
+  if (dp != NULL) {
+    struct dirent *dirp;
+    while ((dirp = readdir(dp))) {
+      int pid = atoi(dirp->d_name);
+      if (pid > 0) {
+        string command_path = string("/proc/") + dirp->d_name + "/cmdline";
+        std::ifstream command_file(command_path.c_str());
+        string command_line;
+        getline(command_file, command_line);
+        if (!command_line.empty()) {
+          size_t pos = command_line.find('\0');
+          if (pos != string::npos) {
+            command_line = command_line.substr(0, pos);
+          }
+          pos = command_line.rfind('/');
+          if (pos != string::npos) {
+            command_line = command_line.substr(pos + 1);
+          }
+          if (process_name == command_line) {
+            pids.push_back(pid);
+          }
+        }
+      }
+    }
+  }
+
+  closedir(dp);
+
+  return pids;
+}
 
 ////// constructor/destructor
 /* "current session" constructor.
@@ -342,6 +382,29 @@ UnionfsCstore::sessionChanged()
 bool
 UnionfsCstore::setupSession()
 {
+  vector<FsPath> directories;
+  vector<int> pids;
+  vector<int> old_pids;
+  FsPath old_config;
+  FsPath work_base;
+
+  string work_string = work_root.path_cstr();
+  work_base = work_string.erase(work_string.find_last_of("/"));
+
+  try {
+    b_fs::directory_iterator di(work_base.path_cstr());
+    for (; di != b_fs::directory_iterator(); ++di) {
+      old_config = di->path().string().c_str();
+      if (path_is_directory(old_config)) {
+        directories.push_back(old_config);
+      }
+    }
+  } catch (...) {
+    if (path_exists(active_root)) {
+      output_internal("no session directories found [%s]\n", work_root.path_cstr());
+    }
+  }
+
   if (!path_exists(work_root)) {
     // session doesn't exist. create dirs.
     try {
@@ -362,10 +425,75 @@ UnionfsCstore::setupSession()
       return false;
     }
   } else if (!path_is_directory(work_root)) {
-    output_internal("setup session not dir [%s]\n",
-                    work_root.path_cstr());
+    output_internal("setup session not dir [%s]\n", work_root.path_cstr());
     return false;
   }
+
+  pids = getActiveCommits();
+
+  struct stat config_info;
+  stat(work_root.path_cstr(), &config_info);
+  int current_uid = (int) config_info.st_uid;
+  bool failed = false;
+
+  for (size_t i = 0; i < directories.size(); i++) {
+    struct stat directory_info;
+    int directory_uid;
+    int current_pid = 0;
+
+    // find uid for the current directory and the active config directory
+
+    stat(directories[i].path_cstr(), &directory_info);
+    directory_uid = (int) directory_info.st_uid;
+
+    // remove old config session directories but only for the current user
+
+    if (directory_uid == current_uid && directory_uid != 0 ) {
+      string config_match = work_base.path_cstr() + std::string("/new_config_");
+      string current_path = directories[i].path_cstr();
+
+      if (current_path.find(config_match) != std::string::npos) {
+        current_pid = atoi(current_path.erase(current_path.find(config_match), config_match.length()).c_str());
+
+        // umount only inactive config session directory, don't touch active sessions
+
+        if (std::find(pids.begin(), pids.end(), current_pid) == pids.end()) {
+          old_pids.push_back(current_pid);
+          output_internal("found inactive config [%d]\n", current_pid);
+          output_internal("umount [%s]\n", directories[i].path_cstr());
+          if (!do_umount(directories[i])) {
+            failed = true;
+          }
+        }
+      }
+    }
+  }
+
+  if (!old_pids.empty()) {
+    for (size_t i = 0; i < directories.size(); i++) {
+
+      int current_pid;
+      string current_path;
+
+      current_path = directories[i].path_cstr();
+      current_pid = atoi(current_path.erase(0, (current_path.find_last_of("_")) + 1).c_str());
+
+      if (std::find(old_pids.begin(), old_pids.end(), current_pid) != old_pids.end()) {
+        try {
+          if (b_fs::remove_all(directories[i].path_cstr()) == 0) {
+            failed = true;
+          }
+        } catch (...) {
+          failed = true;
+        }
+      }
+    }
+  }
+
+  if (failed) {
+    output_internal("failed to remove old config session directories\n");
+  }
+
   return true;
 }
 
@@ -433,7 +561,11 @@ UnionfsCstore::clearCommittedMarkers()
 bool
 UnionfsCstore::construct_commit_active(commit::PrioNode& node)
 {
+  #if __GNUC__ < 6
   auto_ptr<SavePaths> save(create_save_paths());
+  #else
+  unique_ptr<SavePaths> save(create_save_paths());
+  #endif
   reset_paths();
   append_cfg_path(node.getCommitPath());
 
@@ -1084,12 +1216,12 @@ UnionfsCstore::unmark_deactivated_descendants()
       vector<b_fs::path> markers;
       b_fs::recursive_directory_iterator di(get_work_path().path_cstr());
       for (; di != b_fs::recursive_directory_iterator(); ++di) {
-        if (!path_is_regular(di->path().file_string().c_str())
+        if (!path_is_regular(di->path().string().c_str())
             || di->path().filename() != C_MARKER_DEACTIVATE) {
           // not marker
           continue;
         }
-        const char *ppath = di->path().parent_path().file_string().c_str();
+        const char *ppath = di->path().parent_path().string().c_str();
         if (strcmp(ppath, get_work_path().path_cstr()) == 0) {
           // don't unmark the node itself
           continue;
@@ -1152,7 +1284,7 @@ UnionfsCstore::unmark_changed_with_descendants()
     vector<b_fs::path> markers;
     b_fs::recursive_directory_iterator di(get_work_path().path_cstr());
     for (; di != b_fs::recursive_directory_iterator(); ++di) {
-      if (!path_is_regular(di->path().file_string().c_str())
+      if (!path_is_regular(di->path().string().c_str())
           || di->path().filename() != C_MARKER_CHANGED) {
         // not marker
         continue;
@@ -1211,7 +1343,7 @@ UnionfsCstore::discard_changes(unsigned long long& num_removed)
     // iterate through all entries in change root
     b_fs::directory_iterator di(change_root.path_cstr());
     for (; di != b_fs::directory_iterator(); ++di) {
-      if (path_is_directory(di->path().file_string().c_str())) {
+      if (path_is_directory(di->path().string().c_str())) {
         directories.push_back(di->path());
       } else {
         files.push_back(di->path());
@@ -1344,10 +1476,10 @@ UnionfsCstore::check_dir_entries(const FsPath& root, vector<string> *cnodes,
   try {
     b_fs::directory_iterator di(root.path_cstr());
     for (; di != b_fs::directory_iterator(); ++di) {
-      string cname = di->path().filename();
+      string cname = di->path().filename().string();
       if (filter_nodes) {
         // must be directory
-        if (!path_is_directory(di->path().file_string().c_str())) {
+        if (!path_is_directory(di->path().string().c_str())) {
           continue;
         }
         // name cannot start with "."
@@ -1386,8 +1518,8 @@ UnionfsCstore::write_file(const char *file, const string& data, bool append)
     b_fs::create_directories(ppath.path_cstr());
 
     // write the file
-    ofstream fout;
-    fout.exceptions(ofstream::failbit | ofstream::badbit);
+    std::ofstream fout;
+    fout.exceptions(std::ofstream::failbit | std::ofstream::badbit);
     ios_base::openmode mflags = ios_base::out;
     mflags |= ((!append || !path_exists(file))
                ? ios_base::trunc : ios_base::app); // truncate or append
@@ -1416,7 +1548,7 @@ UnionfsCstore::read_whole_file(const FsPath& fpath, string& data)
     }
 
     stringbuf sbuf;
-    ifstream fin(fpath.path_cstr());
+    std::ifstream fin(fpath.path_cstr());
     fin >> &sbuf;
     fin.close();
     /* note: if file contains just a newline => (eof() && fail())
@@ -1446,14 +1578,14 @@ UnionfsCstore::recursive_copy_dir(const FsPath& src, const FsPath& dst,
 
   b_fs::recursive_directory_iterator di(src_str);
   for (; di != b_fs::recursive_directory_iterator(); ++di) {
-    const char *oname = di->path().file_string().c_str();
+    const char *oname = di->path().string().c_str();
     string nname = oname;
     nname.replace(0, src_str.length(), dst_str);
     if (path_is_directory(oname)) {
       b_fs::create_directory(nname);
     } else {
       if (filter_dot_entries) {
-        string of = di->path().filename();
+        string of = di->path().filename().string();
         if (!of.empty() && of.at(0) == '.') {
           // filter dot files (with exceptions)
           if (of != C_COMMENT_FILE) {
@@ -1478,7 +1610,7 @@ UnionfsCstore::find_line_in_file(const FsPath& file, const string& line)
 {
   bool ret = false;
   try {
-    ifstream fin(file.path_cstr());
+    std::ifstream fin(file.path_cstr());
     while (!fin.eof() && !fin.bad() && !fin.fail()) {
       string in;
       getline(fin, in);
@@ -1561,7 +1693,7 @@ UnionfsCstore::do_umount(const FsPath& mdir)
   const char *fusermount_path, *fusermount_prog;
   const char *fusermount_umount;
 
-  fusermount_path = "/usr/bin/fusermount";
+  fusermount_path = "/bin/fusermount";
   fusermount_prog = "fusermount";
   fusermount_umount = "-u";
 
@@ -1585,7 +1717,7 @@ UnionfsCstore::do_umount(const FsPath& mdir)
     dup2(commpipe[0],0);
     close(commpipe[1]);
     if (execl(fusermount_path, fusermount_prog, fusermount_umount, mdir.path_cstr(), NULL) != 0) {
-        output_internal("union mount failed [%s][%s]\n",
+        output_internal("union umount failed [%s][%s]\n",
                    strerror(errno), mdir.path_cstr());
         return false;
     }

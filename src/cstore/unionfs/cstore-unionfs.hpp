@@ -34,6 +34,7 @@
 namespace commit {
 class PrioNode;
 }
+using namespace boost::filesystem;
 
 namespace cstore { // begin namespace cstore
 namespace unionfs { // begin namespace unionfs
@@ -185,9 +186,15 @@ private:
     FsPath cpath;
     FsPath tpath;
   };
+  #if __GNUC__ < 6
   auto_ptr<SavePaths> create_save_paths() {
     return auto_ptr<SavePaths>(new UnionfsSavePaths(this));
   };
+  #else
+  unique_ptr<SavePaths> create_save_paths() {
+    return unique_ptr<SavePaths>(new UnionfsSavePaths(this));
+  };
+  #endif
 
   bool cfg_path_at_root() {
     return (!mutable_cfg_path.has_parent_path());
@@ -291,7 +298,8 @@ private:
   // boost fs operations wrappers
   bool b_fs_get_file_status(const char *path, b_fs::file_status& fs) {
     b_s::error_code ec;
-    fs = b_fs::detail::status_api(path, ec);
+    file_status s = status(path, ec);
+    fs = s;
     return (!ec);
   };
   bool path_exists(const char *path);

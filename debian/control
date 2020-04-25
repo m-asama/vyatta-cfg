@@ -3,7 +3,7 @@ Section: contrib/net
 Priority: extra
 Maintainer: VyOS Package Maintainers <maintainers@vyos.net>
 Build-Depends: debhelper (>= 5), autotools-dev, libglib2.0-dev,
- libboost-filesystem1.42-dev, libapt-pkg-dev, libtool, flex,
+ libboost-filesystem1.71-dev, libapt-pkg-dev, libtool, flex,
  bison, libperl-dev
 Standards-Version: 3.7.2
 
@@ -13,16 +13,16 @@ Depends: sed (>= 4.1.5),
  procps (>= 1:3.2.7-3),
  coreutils (>= 5.97-5.3),
  vyatta-bash | bash (>= 4.1),
- vyatta-unicast | vyatta-quagga | quagga,
+ frr,
  vyatta-op,
  vyatta-config-migrate, 
  vyatta-cfg-system (>= 0.18),
  parted,
- dhcp3-client | vyatta-dhcp3-client,
+# dhcp3-client | vyatta-dhcp3-client,
  bsdutils (>=1:2.13),
  vlan,
  ethtool,
- iproute,
+ iproute2,
  curl,
  libsocket6-perl,
  libvyatta-cfg1 (=${binary:Version}),
@@ -52,7 +52,7 @@ Architecture: any
 Priority: optional
 Section: libdevel
 Depends: libvyatta-cfg1 (=${binary:Version}),
- libboost-filesystem1.42-dev
+ libboost-filesystem1.71-dev
 Description: libvyatta-cfg development package
  Development header and library files for the Vyatta configuration back-end
  library.

@@ -22,7 +22,7 @@ package Vyatta::ioctl;
 use strict;
 use warnings;
 use Socket;
-use Socket6;
+#use Socket6;
 
 {
     local $^W = 0;

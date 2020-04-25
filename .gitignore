@@ -26,6 +26,13 @@ debian/*.log
 debian/*.substvars
 debian/*.debhelper
 debian/stamp-*
+debian/changelog.*
+debian/autoreconf.after
+debian/autoreconf.before
+debian/debhelper-build-stamp
+m4/
+perl_dmod/Cstore/MYMETA.json
+perl_dmod/Cstore/MYMETA.yml
 INSTALL
 Makefile.in
 Makefile

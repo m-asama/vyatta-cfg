@@ -1,6 +1,8 @@
 # Process this file with autoconf to produce a configure script.
 AC_PREREQ(2.59)
 
+AC_CONFIG_MACRO_DIRS([m4])
+
 m4_define([VERSION_ID], [m4_esyscmd([
 	if test -f .version ; then
 	    head -n 1 .version | tr -d \\n
@@ -13,6 +15,7 @@ test -n "$VYATTA_VERSION" || VYATTA_VERSION=$PACKAGE_VERSION
 
 AC_CONFIG_AUX_DIR([config])
 AM_INIT_AUTOMAKE([gnu no-dist-gzip dist-bzip2 subdir-objects])
+AM_SILENT_RULES([yes])
 AC_PREFIX_DEFAULT([/opt/vyatta])
 
 AC_PROG_CC
@@ -42,6 +45,9 @@ AC_CONFIG_FILES(
   [debian/vyatta-cfg.postrm])
 
 AC_SUBST(NOSTRIP)
+PKG_CHECK_MODULES(GOBJECT, [gobject-2.0])
+AC_SUBST(GOBJECT_CFLAGS)
+AC_SUBST(GOBJECT_LIBS)
 
 AC_OUTPUT
 
