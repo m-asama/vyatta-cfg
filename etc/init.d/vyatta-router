@@ -52,6 +52,7 @@ fi
 
 declare -a subinit
 declare -a all_subinits=(
+    dsa
     rl-system
     firewall )
 
