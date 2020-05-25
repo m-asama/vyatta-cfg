@@ -39,7 +39,7 @@ declare action=$1; shift
 declare -x BOOTFILE=$vyatta_sysconfdir/config/config.boot
 
 # If vyos-config= boot option is present, use that file instead
-VYOS_CONFIG=$(cat /proc/cmdline | grep -Eo '\bvyos-config=(\S+)\b' /proc/cmdline | awk -F'=' '{print $2}')
+VYOS_CONFIG=$(cat /proc/cmdline | grep -Eo '\bvyos-config=(\S+)\b' | awk -F'=' '{print $2}')
 
 if [ ! -z "$VYOS_CONFIG" ]; then
     if [ -r "$VYOS_CONFIG" ]; then
@@ -54,15 +54,16 @@ declare -a subinit
 declare -a all_subinits=(
     dsa
     rl-system
-    firewall )
+    firewall
+)
 
 if [ $# -gt 0 ] ; then
     for s in $@ ; do
-	[ -x ${vyatta_sbindir}/${s}.init ] && subinit[${#subinit}]=$s
+	[ -x ${vyatta_sbindir}/${s}.init ] && subinit+=($s)
     done
 else
     for s in ${all_subinits[@]} ; do
-	[ -x ${vyatta_sbindir}/${s}.init ] && subinit[${#subinit}]=$s
+	[ -x ${vyatta_sbindir}/${s}.init ] && subinit+=($s)
     done
 fi
 
