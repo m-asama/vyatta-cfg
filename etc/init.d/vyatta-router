@@ -158,6 +158,14 @@ mount_slash_config ()
     chgrp -R ${GROUP} /config
 }
 
+# execute the post-config scripts
+run_postconfig_scripts ()
+{
+    if [ -x /config/scripts/vyatta-postconfig-bootup.script ]; then
+        /config/scripts/vyatta-postconfig-bootup.script
+    fi
+}
+
 start ()
 {
     log_action_begin_msg "Mounting VyOS Config"
@@ -194,6 +202,8 @@ start ()
     telinit q
     bind_mount_boot
     chmod g-w,o-w /
+
+    run_postconfig_scripts
 }
 
 stop()
